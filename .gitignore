@@ -30,3 +30,5 @@
 *.exe
 *.out
 *.app
+gpt_128.dd
+mbr_128.dd

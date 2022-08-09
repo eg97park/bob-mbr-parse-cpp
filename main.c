@@ -66,15 +66,27 @@ int main(int argc, char* argv[]){
 
     BR* brHdr = (BR*)buff;
     if (printPartitionInfo(buff, &(brHdr->part1)) != 0){
+        free(buff);
+        buff = NULL;
+        brHdr = NULL;
         return -1;
     }
     if (printPartitionInfo(buff, &(brHdr->part2)) != 0){
+        free(buff);
+        buff = NULL;
+        brHdr = NULL;
         return -1;
     }
     if (printPartitionInfo(buff, &(brHdr->part3)) != 0){
+        free(buff);
+        buff = NULL;
+        brHdr = NULL;
         return -1;
     }
     if (printPartitionInfo(buff, &(brHdr->part4)) != 0){
+        free(buff);
+        buff = NULL;
+        brHdr = NULL;
         return -1;
     }
 

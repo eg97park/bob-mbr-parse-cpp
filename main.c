@@ -4,6 +4,13 @@
 #include <arpa/inet.h>
 
 
+const uint8_t NTFS = 0x07;
+const uint8_t FAT32_CHS = 0x08;
+const uint8_t FAT32_LBA = 0x0C;
+const uint8_t EXTENDED_PARTITION_CHS = 0x05;
+const uint8_t EXTENDED_PARTITION_LBA = 0x0F;
+
+
 #pragma pack(1) 
 typedef struct PARTITION_TABLE_ENTRY_
 {
@@ -38,8 +45,9 @@ typedef struct EBR_
 }EBR;
 
 
-uint32_t printEbrInfo(uint8_t* buff_, uint8_t* cur_buff_, const uint32_t firstEbrSector, const uint32_t lastEbrSector);
-int printPartitionInfo(uint8_t* buff_, const PARTITION_TABLE_ENTRY* PARTITION_TABLE_ENTRY_, const uint32_t firstEbrSector, const uint32_t lastEbrSector);
+void printBlanc(int refCnt);
+int printPartitionInfo(uint8_t* img_ptr_, const PARTITION_TABLE_ENTRY* entry_);
+int printEbrInfo(const uint8_t* img_ptr_, const uint8_t* cur_img_ptr, const uint32_t mbrEbrSector, const uint32_t lastEbrSector);
 uint8_t* readFile(const char* filePath_, size_t* sz_);
 
 
@@ -57,93 +65,85 @@ int main(int argc, char* argv[]){
     }
 
     BR* brHdr = (BR*)buff;
-    printPartitionInfo(buff, &(brHdr->part1), 0, 0);
-    printPartitionInfo(buff, &(brHdr->part2), 0, 0);
-    printPartitionInfo(buff, &(brHdr->part3), 0, 0);
-    printPartitionInfo(buff, &(brHdr->part4), 0, 0);
+    if (printPartitionInfo(buff, &(brHdr->part1)) != 0){
+        return -1;
+    }
+    if (printPartitionInfo(buff, &(brHdr->part2)) != 0){
+        return -1;
+    }
+    if (printPartitionInfo(buff, &(brHdr->part3)) != 0){
+        return -1;
+    }
+    if (printPartitionInfo(buff, &(brHdr->part4)) != 0){
+        return -1;
+    }
 
     free(buff);
-    brHdr = NULL;
     buff = NULL;
+    brHdr = NULL;
     return 0;
 }
 
 
-uint32_t printEbrInfo(uint8_t* buff_, uint8_t* cur_buff_, const uint32_t firstEbrSector, const uint32_t lastEbrSector){
+void printBlanc(int refCnt){
+    for (int _ = 0; _ < refCnt; _++){
+        printf("   ");
+    }
+}
+
+
+int printPartitionInfo(uint8_t* img_ptr_, const PARTITION_TABLE_ENTRY* entry_){
+    static int currentEbrRefCnt = 0;
+    const uint8_t type = entry_->type;
+    const uint32_t lbaAddr = (entry_->lbaAddr);
+    const uint32_t size = entry_->size;
+    if (type == NTFS){
+        printf("NTFS %d %d\n", lbaAddr * 512, size * 512);
+    }
+    else if (type == FAT32_CHS || type == FAT32_LBA){
+        printf("FAT32 %d %d\n", lbaAddr * 512, size * 512);
+    }
+    else if (type == EXTENDED_PARTITION_CHS || type == EXTENDED_PARTITION_LBA){
+        printf("EXTENDED_PARTITION %d %d\n", lbaAddr * 512, size * 512);
+        if (printEbrInfo(img_ptr_, img_ptr_ + (lbaAddr * 512), lbaAddr, lbaAddr) != 0){
+            printf("@printEbrInfo ERROR\n");
+            return -1;
+        }
+    }
+    else{
+        return -1;
+    }
+    return 0;
+}
+
+
+int printEbrInfo(const uint8_t* img_ptr_, const uint8_t* cur_img_ptr, const uint32_t mbrEbrSector, const uint32_t lastEbrSector){
     static int refCnt = 0;
     refCnt++;
-    
-    EBR* EBR_ = (EBR*)(cur_buff_);
-    switch (EBR_->part.type)
-    {
-    case 0x07:
-        printf("NTFS %x %x\n", (EBR_->part.lbaAddr + lastEbrSector) * 512, (EBR_->part.size) * 512);
-        break;
-    case 0x0B:
-        printf("FAT32 %x %x\n", (EBR_->part.lbaAddr + lastEbrSector) * 512, (EBR_->part.size) * 512);
-        break;
-    case 0x0C:
-        printf("FAT32 %x %x\n", (EBR_->part.lbaAddr + lastEbrSector) * 512, (EBR_->part.size) * 512);
-        break;
-    case 0x05:
-        printf("???@0");
-        return 0;
-        break;
-    default:
-        break;
+
+    const EBR* EBR_ = (const EBR*)(cur_img_ptr);
+    const uint8_t partType = EBR_->part.type;
+    const uint8_t nextType = EBR_->next.type;
+
+    if (partType == NTFS){
+        printBlanc(refCnt);
+        printf("NTFS %d %d\n", (EBR_->part.lbaAddr + lastEbrSector) * 512, (EBR_->part.size) * 512);
+    }
+    else if (partType == FAT32_CHS || partType == FAT32_LBA){
+        printBlanc(refCnt);
+        printf("FAT32 %d %d\n", (EBR_->part.lbaAddr + lastEbrSector) * 512, (EBR_->part.size) * 512);
+    }
+    else{
+        return -1;
     }
 
-    switch (EBR_->next.type)
-    {
-    case 0x07:
-        printf("???@1");
-        return 0;
-        break;
-    case 0x0B:
-        printf("???@2");
-        return 0;
-        break;
-    case 0x0C:
-        printf("???@3");
-        return 0;
-        break;
-    case 0x05:
-        printf("EBR %x %x\n", (EBR_->next.lbaAddr + firstEbrSector) * 512, (EBR_->next.size) * 512);
-        if (refCnt == 1){
-            printEbrInfo(buff_, buff_ + (EBR_->next.lbaAddr + firstEbrSector) * 512, firstEbrSector, EBR_->next.lbaAddr + lastEbrSector);
-        }
-        else{
-            printEbrInfo(buff_, buff_ + (EBR_->next.lbaAddr + firstEbrSector) * 512, firstEbrSector, EBR_->next.lbaAddr + lastEbrSector);
-        }
-        break;
-    default:
-        break;
+    if (nextType == EXTENDED_PARTITION_CHS || nextType == EXTENDED_PARTITION_LBA){
+        printBlanc(refCnt);
+        printf("EXTENDED_PARTITION %d %d\n", (EBR_->next.lbaAddr + mbrEbrSector) * 512, (EBR_->next.size) * 512);
+        printEbrInfo(img_ptr_, img_ptr_ + (EBR_->next.lbaAddr + mbrEbrSector) * 512, mbrEbrSector, EBR_->next.lbaAddr + lastEbrSector);
     }
-    return 0;
-}
-
-
-int printPartitionInfo(uint8_t* buff_, const PARTITION_TABLE_ENTRY* PARTITION_TABLE_ENTRY_, const uint32_t firstEbrSector, const uint32_t lastEbrSector){
-    static int currentEbrRefCnt = 0;
-    const uint8_t type = PARTITION_TABLE_ENTRY_->type;
-    const uint32_t lbaAddr = (PARTITION_TABLE_ENTRY_->lbaAddr) + lastEbrSector;
-    const uint32_t size = PARTITION_TABLE_ENTRY_->size;
-    switch (type)
-    {
-    case 0x07:
-        printf("NTFS %x %x\n", lbaAddr * 512, size * 512);
-        break;
-    case 0x0B:
-        printf("FAT32 %x %x\n", lbaAddr * 512, size * 512);
-        break;
-    case 0x0C:
-        printf("FAT32 %x %x\n", lbaAddr * 512, size * 512);
-        break;
-    case 0x05:
-        printf("EBR %x %x\n", lbaAddr * 512, size * 512);
-        printEbrInfo(buff_, buff_ + (lbaAddr * 512), lbaAddr, lbaAddr);
-    default:
-        break;
+    else{
+        return -1;
     }
     return 0;
 }
@@ -190,4 +190,3 @@ uint8_t* readFile(const char* filePath_, size_t* sz_){
     fclose(fp);
     return buff;
 }
-
